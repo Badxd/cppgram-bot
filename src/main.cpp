@@ -9,7 +9,12 @@
 #include <stdexcept>
 #include <string>
 
+#include <deque>
+#include <map>
+#include <memory>
+
 #include "cppgram/client.h"
+#include "cppgram/mtproto/session.h"
 
 namespace {
 
@@ -52,23 +57,76 @@ std::string utc_now() {
     return buf;
 }
 
+
+const std::map<int, std::string> kDcAddresses = {
+    {1, "149.154.175.53"},
+    {2, "149.154.167.51"},
+    {3, "149.154.175.100"},
+    {4, "149.154.167.91"},
+    {5, "91.108.56.130"},
+};
+
+// Telegram answers "USER_MIGRATE_N" when the account lives on DC N.
+int migrate_target(const std::string& message) {
+    const std::size_t pos = message.find("MIGRATE_");
+    if (pos == std::string::npos) return 0;
+    return std::atoi(message.c_str() + pos + 8);
+}
+
+// Starts on DC2 and follows migrate hints until the bot logs in. Each DC gets its own session file.
+std::unique_ptr<cppgram::Client> connect_and_login(const std::string& api_id, const std::string& api_hash,
+                                                    const std::string& token, const std::string& session_base) {
+    std::deque<int> queue{2};
+    std::map<int, bool> tried;
+    while (!queue.empty()) {
+        const int dc = queue.front();
+        queue.pop_front();
+        if (tried[dc]) continue;
+        tried[dc] = true;
+
+        const auto addr = kDcAddresses.find(dc);
+        if (addr == kDcAddresses.end()) continue;
+
+        cppgram::ClientOptions opt;
+        opt.api_id = std::stoi(api_id);
+        opt.api_hash = api_hash;
+        opt.dc_id = dc;
+        opt.dc_ip = addr->second;
+        opt.dc_port = 443;
+        opt.session_path = session_base + "-dc" + std::to_string(dc) + ".sqlite";
+
+        auto client = std::make_unique<cppgram::Client>(opt);
+        try {
+            client->connect();
+            client->login_bot(token);
+            std::cout << "login ok on DC " << dc << "\n";
+            return client;
+        } catch (const cppgram::mtproto::RpcError& e) {
+            const int target = migrate_target(e.what());
+            std::cerr << "login on DC " << dc << " failed: " << e.what() << "\n";
+            if (target != 0 && !tried[target]) queue.push_front(target);
+            client->disconnect();
+        }
+    }
+    throw std::runtime_error("bot could not log in on any DC");
+}
+
 }  // namespace
 
 int main() {
     try {
-        cppgram::ClientOptions opt;
-        opt.api_id = std::stoi(env_or_throw("TG_API_ID"));
-        opt.api_hash = env_or_throw("TG_API_HASH");
+        const std::string api_id = env_or_throw("TG_API_ID");
+        const std::string api_hash = env_or_throw("TG_API_HASH");
+        const std::string token = env_or_throw("TG_BOT_TOKEN");
         const char* session = std::getenv("TG_SESSION");
-        opt.session_path = (session && *session) ? session : "bot.sqlite";
+        const std::string session_base = (session && *session) ? session : "bot";
 
-        cppgram::Client client(opt);
+        std::unique_ptr<cppgram::Client> client_ptr = connect_and_login(api_id, api_hash, token, session_base);
+        cppgram::Client& client = *client_ptr;
         client.on_error([](cppgram::Client&, const std::string& stage, const std::string& message) {
             std::cerr << "handler error in " << stage << ": " << message << "\n";
         });
 
-        client.connect();
-        client.login_bot(env_or_throw("TG_BOT_TOKEN"));
         const auto me = client.get_me();
         std::cout << "logged in as @" << me.username << "\n";
 
