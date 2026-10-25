@@ -20,7 +20,7 @@ WORKDIR /src/bot
 COPY . .
 
 # Prebuilt cppgram (headers + libcppgram.a) downloaded from the GitHub release.
-ARG CPPGRAM_LIB_URL=https://github.com/Badxd/cppgram-bot/releases/download/v1/cppgram_lib.tar.xz
+ARG CPPGRAM_LIB_URL=https://github.com/Badxd/cppgram/releases/download/V1/cppgram_lib.tar.xz
 RUN curl -fsSL "$CPPGRAM_LIB_URL" | tar -xJ -C /src/bot
 
 RUN cmake -S . -B build \
