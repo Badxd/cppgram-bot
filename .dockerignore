@@ -1,0 +1,7 @@
+build/
+.git/
+*.sqlite
+*.sqlite3
+*.db
+*.log
+.env

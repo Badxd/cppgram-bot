@@ -1,0 +1,24 @@
+{
+  "name": "cppgram-bot",
+  "description": "Telegram command bot built on the cppgram MTProto client.",
+  "keywords": ["telegram", "bot", "mtproto", "cpp"],
+  "env": {
+    "TG_API_ID": {
+      "description": "Telegram API ID from my.telegram.org",
+      "required": true
+    },
+    "TG_API_HASH": {
+      "description": "Telegram API hash from my.telegram.org",
+      "required": true
+    },
+    "TG_BOT_TOKEN": {
+      "description": "Bot token from BotFather",
+      "required": true
+    }
+  },
+  "formation": {
+    "worker": {
+      "quantity": 1
+    }
+  }
+}
