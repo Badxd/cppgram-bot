@@ -1,0 +1,4 @@
+# Copy to .env for local runs only. Never commit real values.
+TG_API_ID=25742938
+TG_API_HASH=b35b715fe8dc0a58e8048988286fc5b6
+TG_BOT_TOKEN=8866413904:AAGaDkCR2_zdZwAqGc2pWGPmSWmVPsnY24s
