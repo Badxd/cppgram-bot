@@ -4,9 +4,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
-    ca-certificates \
     cmake \
-    git \
     libboost-dev \
     libcurl4-openssl-dev \
     libsqlite3-dev \
@@ -15,18 +13,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     zlib1g-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# The cppgram library is fetched at build time. Pin a branch or tag with --build-arg CPPGRAM_REF=<ref>.
-ARG CPPGRAM_REPO=https://github.com/Badxd/cppgram.git
-ARG CPPGRAM_REF=main
-RUN git clone --depth 1 --branch "${CPPGRAM_REF}" "${CPPGRAM_REPO}" /src/cppgram
-
+# Prebuilt cppgram (headers + libcppgram.a) is copied in, so the library is not compiled on Heroku.
 WORKDIR /src/bot
 COPY . .
 
 RUN cmake -S . -B build \
       -DCMAKE_BUILD_TYPE=Release \
-      -DCMAKE_CXX_FLAGS_RELEASE="-O0 -DNDEBUG" \
-      -DCPPGRAM_SOURCE_DIR=/src/cppgram \
+      -DCPPGRAM_LIB_DIR=/src/bot/cppgram_lib/lib \
+      -DCPPGRAM_INCLUDE_DIR=/src/bot/cppgram_lib/include \
     && cmake --build build --target cppgram_bot --parallel 2
 
 FROM debian:bookworm-slim AS runtime

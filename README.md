@@ -37,3 +37,26 @@ export TG_BOT_TOKEN=your_bot_token
 ```
 
 Optional: `TG_SESSION=path/to/bot.sqlite` (default `bot.sqlite`) keeps the login and update state.
+
+## Prebuilt cppgram (no library build)
+
+Put the prebuilt library next to this project so the folder looks like this:
+
+```
+cppgram-bot/
+  cppgram_lib/
+    include/
+    lib/libcppgram.a
+  src/main.cpp
+  CMakeLists.txt
+  Dockerfile
+```
+
+Extract `cppgram_lib.tar.xz` into the project folder (`tar -xJf cppgram_lib.tar.xz`). Then:
+
+```sh
+cmake -S . -B build -DCPPGRAM_LIB_DIR=$PWD/cppgram_lib/lib -DCPPGRAM_INCLUDE_DIR=$PWD/cppgram_lib/include
+cmake --build build --target cppgram_bot
+```
+
+On Heroku the Dockerfile uses the same folder, so cppgram is never compiled there.
