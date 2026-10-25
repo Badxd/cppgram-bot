@@ -1,10 +1,13 @@
-FROM debian:bookworm-slim AS builder
+FROM ubuntu:24.04 AS builder
 
 ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
+    ca-certificates \
     cmake \
+    curl \
+    xz-utils \
     libboost-dev \
     libcurl4-openssl-dev \
     libsqlite3-dev \
@@ -13,9 +16,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     zlib1g-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Prebuilt cppgram (headers + libcppgram.a) is copied in, so the library is not compiled on Heroku.
 WORKDIR /src/bot
 COPY . .
+
+# Prebuilt cppgram (headers + libcppgram.a) downloaded from the GitHub release.
+ARG CPPGRAM_LIB_URL=https://github.com/Badxd/cppgram-bot/releases/download/v1/cppgram_lib.tar.xz
+RUN curl -fsSL "$CPPGRAM_LIB_URL" | tar -xJ -C /src/bot
 
 RUN cmake -S . -B build \
       -DCMAKE_BUILD_TYPE=Release \
@@ -23,19 +29,18 @@ RUN cmake -S . -B build \
       -DCPPGRAM_INCLUDE_DIR=/src/bot/cppgram_lib/include \
     && cmake --build build --target cppgram_bot --parallel 2
 
-FROM debian:bookworm-slim AS runtime
+FROM ubuntu:24.04 AS runtime
 
 ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
-    libcurl4 \
+    libcurl4t64 \
     libsqlite3-0 \
-    libssl3 \
+    libssl3t64 \
     zlib1g \
     && rm -rf /var/lib/apt/lists/*
 
-# Heroku's filesystem is ephemeral, so the session database lives in /tmp and is recreated after a restart.
 WORKDIR /tmp
 COPY --from=builder /src/bot/build/cppgram_bot /app/cppgram_bot
 
