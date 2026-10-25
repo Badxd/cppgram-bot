@@ -1,24 +1,31 @@
 {
-  "name": "cppgram-bot",
-  "description": "Telegram command bot built on the cppgram MTProto client.",
-  "keywords": ["telegram", "bot", "mtproto", "cpp"],
-  "env": {
-    "TG_API_ID": {
-      "description": "Telegram API ID from my.telegram.org",
-      "required": true
-    },
-    "TG_API_HASH": {
-      "description": "Telegram API hash from my.telegram.org",
-      "required": true
-    },
-    "TG_BOT_TOKEN": {
-      "description": "Bot token from BotFather",
-      "required": true
-    }
-  },
-  "formation": {
-    "worker": {
-      "quantity": 1
-    }
-  }
+"name": "CppGram",
+"description": "Telegram MTProto client and connectivity test written in C++.",
+"repository": "https://github.com/Badxd/cppgram",
+"keywords": [
+"cppgram",
+"cpp",
+"telegram",
+"mtproto"
+],
+"stack": "container",
+"env": {
+"TG_API_ID": {
+"description": "Telegram API ID from https://my.telegram.org",
+"required": true
+},
+"TG_API_HASH": {
+"description": "Telegram API hash from https://my.telegram.org",
+"required": true
+},
+"TG_BOT_TOKEN": {
+"description": "Telegram bot token from @BotFather",
+"required": true
+}
+},
+"formation": {
+"worker": {
+"quantity": 1
+}
+}
 }
