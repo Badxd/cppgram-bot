@@ -42,7 +42,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /tmp
+# Only copying the main bot executable now
 COPY --from=builder /src/bot/build/cppgram_bot /app/cppgram_bot
-COPY --from=builder /src/bot/build/cppgram_session_generator /app/cppgram_session_generator
 
 CMD ["/app/cppgram_bot"]
