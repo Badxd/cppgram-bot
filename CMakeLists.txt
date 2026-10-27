@@ -24,9 +24,6 @@ set_target_properties(cppgram_prebuilt PROPERTIES
 target_link_libraries(cppgram_prebuilt INTERFACE
     CURL::libcurl OpenSSL::SSL OpenSSL::Crypto ZLIB::ZLIB SQLite::SQLite3 Threads::Threads)
 
+# Only building the main bot now
 add_executable(cppgram_bot src/main.cpp)
 target_link_libraries(cppgram_bot PRIVATE cppgram_prebuilt)
-
-# Interactive tool: logs in with phone + code (+ 2FA) and prints a session string.
-add_executable(cppgram_session_generator src/session_generator.cpp)
-target_link_libraries(cppgram_session_generator PRIVATE cppgram_prebuilt)
