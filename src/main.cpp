@@ -101,17 +101,23 @@ const std::string& token, const std::string& session_base) {
         opt.dc_id = dc;
         opt.dc_ip = addr->second;
         opt.dc_port = 443;
-        opt.session_path = session_base + "-dc" + std::to_string(dc) + ".sqlite";
+        // Use /tmp/ on Heroku so we don't hit a read-only filesystem
+        opt.session_path = "/tmp/" + session_base + "-dc" + std::to_string(dc) + ".sqlite";
 
         auto client = std::make_unique<cppgram::Client>(opt);
         try {
             client->connect();
             client->login_bot(token);
-            std::cout << "login ok on DC " << dc << "\n";
+            std::cout << "[+] login ok on DC " << dc << "\n";
             return client;
         } catch (const cppgram::mtproto::RpcError& e) {
+            // PRINT THE EXACT ERROR
+            std::cerr << "[-] DC " << dc << " RpcError: " << e.what() << "\n";
             const int target = migrate_target(e.what());
             if (target != 0 && !tried[target]) queue.push_front(target);
+            client->disconnect();
+        } catch (const std::exception& e) {
+            std::cerr << "[-] DC " << dc << " Exception: " << e.what() << "\n";
             client->disconnect();
         }
     }
@@ -137,9 +143,7 @@ int main() {
         const auto me = client.get_me();
         std::cout << "logged in as @" << me.username << "\n";
 
-        // ==========================================
-        // CORE BOT COMMANDS
-        // ==========================================
+        // --- EXISTING COMMANDS ---
         client.on_message(cppgram::filters::command("start"),
             [](cppgram::Client& c, const cppgram::Message& m) {
                 c.send_text(m.chat, "<b>Hi!</b> I am a cppgram bot.\nSend /help to see what I can do.", cppgram::ParseMode::Html);
@@ -177,11 +181,8 @@ int main() {
                 c.send_text(m.chat, utc_now());
             });
 
-        // ==========================================
-        // SESSION GENERATOR COMMANDS
-        // ==========================================
+        // --- SESSION GENERATOR COMMANDS ---
 
-        // 1. /gen <phone> <api_id> <api_hash>
         client.on_message(cppgram::filters::command("gen"),
             [](cppgram::Client& c, const cppgram::Message& m) {
                 std::string args = args_of(m.text);
@@ -225,7 +226,7 @@ int main() {
                 opts.dc_id = gen_dc;
                 opts.dc_ip = addr;
                 opts.dc_port = 443;
-                opts.session_path = "gen_temp.sqlite";
+                opts.session_path = "/tmp/gen_temp.sqlite"; // Heroku writable path
 
                 gen_client = std::make_unique<cppgram::Client>(opts);
                 try {
@@ -249,7 +250,6 @@ int main() {
                 }
             });
 
-        // 2. /otp <code>
         client.on_message(cppgram::filters::command("otp"),
             [](cppgram::Client& c, const cppgram::Message& m) {
                 std::string code = args_of(m.text);
@@ -268,7 +268,6 @@ int main() {
                     
                     gen_client->invoke(sign);
                     
-                    // If we get here, it worked (no 2FA)
                     std::string session = gen_client->export_session_string();
                     c.send_text(m.chat, "✅ Success! Your Session String:\n\n<code>" + html_escape(session) + "</code>", cppgram::ParseMode::Html);
                     
@@ -293,7 +292,6 @@ int main() {
                 }
             });
 
-        // 3. /pass <password>
         client.on_message(cppgram::filters::command("pass"),
             [](cppgram::Client& c, const cppgram::Message& m) {
                 std::string pw = args_of(m.text);
