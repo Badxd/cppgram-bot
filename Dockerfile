@@ -27,7 +27,7 @@ RUN cmake -S . -B build \
       -DCMAKE_BUILD_TYPE=Release \
       -DCPPGRAM_LIB_DIR=/src/bot/cppgram_lib/lib \
       -DCPPGRAM_INCLUDE_DIR=/src/bot/cppgram_lib/include \
-    && cmake --build build --target cppgram_bot --parallel 2
+    && cmake --build build --parallel 2
 
 FROM ubuntu:24.04 AS runtime
 
@@ -43,5 +43,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /tmp
 COPY --from=builder /src/bot/build/cppgram_bot /app/cppgram_bot
+COPY --from=builder /src/bot/build/cppgram_session_generator /app/cppgram_session_generator
 
 CMD ["/app/cppgram_bot"]
