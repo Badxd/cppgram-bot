@@ -1,10 +1,5 @@
-build/
-*.sqlite
-*.sqlite3
-*.db
-*.log
-.env
 
+.env
 *.env
 .env.*
 .env.bak
