@@ -72,13 +72,14 @@ std::string utc_now() {
     return buf;
 }
 
+// FIX 1: Correct migrate_target.
+// Old code searched for "MIGRATE" (7 chars) then jumped pos+9, landing past the digit.
+// For "USER_MIGRATE_2": pos=5, i=14 == string length — loop never ran, returned 0.
+// Fixed: search for "MIGRATE_" (8 chars), atoi from pos+8 lands on the digit(s).
 int migrate_target(const std::string& message) {
-    const auto pos = message.find("MIGRATE");
+    const std::size_t pos = message.find("MIGRATE_");
     if (pos == std::string::npos) return 0;
-    std::size_t i = pos + 9;
-    int dc = 0;
-    while (i < message.size() && message[i] >= '0' && message[i] <= '9') dc = dc * 10 + (message[i++] - '0');
-    return dc;
+    return std::atoi(message.c_str() + pos + 8);
 }
 
 bool has(const std::string& message, const char* what) { return message.find(what) != std::string::npos; }
@@ -111,7 +112,6 @@ const std::string& token, const std::string& session_base) {
             std::cout << "[+] login ok on DC " << dc << "\n";
             return client;
         } catch (const cppgram::mtproto::RpcError& e) {
-            // PRINT THE EXACT ERROR
             std::cerr << "[-] DC " << dc << " RpcError: " << e.what() << "\n";
             const int target = migrate_target(e.what());
             if (target != 0 && !tried[target]) queue.push_front(target);
@@ -207,6 +207,11 @@ int main() {
                 }
                 if (phone[0] != '+') phone.insert(phone.begin(), '+');
 
+                int a_id = 0;
+                try { a_id = std::stoi(a_id_str); } catch (...) {
+                    c.send_text(m.chat, "Invalid API ID."); return;
+                }
+
                 std::lock_guard<std::mutex> lock(gen_mutex);
                 if (gen_client) { gen_client->disconnect(); gen_client.reset(); }
 
@@ -214,39 +219,71 @@ int main() {
                 gen_dc = 2;
                 gen_code_hash = "";
 
-                int a_id = 0;
-                try { a_id = std::stoi(a_id_str); } catch (...) {
-                    c.send_text(m.chat, "Invalid API ID."); return;
+                // FIX 2: DC migration retry for auth_sendCode.
+                // Telegram can return PHONE_MIGRATE_N if the account lives on a different DC.
+                // Without this retry, /gen always fails for users on DC 1/3/4/5.
+                std::deque<int> queue{2};
+                std::map<int, bool> tried;
+                bool sent_ok = false;
+
+                while (!queue.empty() && !sent_ok) {
+                    const int dc = queue.front(); queue.pop_front();
+                    if (tried[dc]) continue; tried[dc] = true;
+
+                    const auto addr_it = kDcAddresses.find(dc);
+                    if (addr_it == kDcAddresses.end()) continue;
+
+                    cppgram::ClientOptions opts;
+                    opts.api_id = a_id;
+                    opts.api_hash = a_hash;
+                    opts.dc_id = dc;
+                    opts.dc_ip = addr_it->second;
+                    opts.dc_port = 443;
+                    opts.session_path = "/tmp/gen_temp_dc" + std::to_string(dc) + ".sqlite";
+
+                    auto candidate = std::make_unique<cppgram::Client>(opts);
+                    try {
+                        candidate->connect();
+
+                        fn::auth_sendCode send;
+                        send.phone_number = gen_phone;
+                        send.api_id = a_id;
+                        send.api_hash = a_hash;
+                        send.settings = std::make_shared<tl::CodeSettings>(tl::CodeSettings{ty::codeSettings{}});
+
+                        const tl::auth_SentCode sent = candidate->invoke(send);
+                        if (const auto* s = std::get_if<ty::auth_sentCode>(&sent.value)) {
+                            gen_code_hash = s->phone_code_hash;
+                            gen_dc = dc;
+                            gen_client = std::move(candidate);
+                            c.send_text(m.chat, "✅ Code sent to Telegram app/SMS. Reply with /otp <code>");
+                            sent_ok = true;
+                        } else {
+                            candidate->disconnect();
+                            c.send_text(m.chat, "❌ Unexpected response from Telegram.");
+                            sent_ok = true; // not a migrate error, don't retry
+                        }
+                    } catch (const cppgram::mtproto::RpcError& e) {
+                        std::cerr << "[-] gen DC " << dc << " RpcError: " << e.what() << "\n";
+                        const int target = migrate_target(e.what());
+                        if (target != 0 && !tried[target]) {
+                            queue.push_front(target);
+                        } else {
+                            // non-migrate RPC error (e.g. PHONE_NUMBER_INVALID)
+                            c.send_text(m.chat, std::string("❌ Error: ") + e.what());
+                            sent_ok = true;
+                        }
+                        candidate->disconnect();
+                    } catch (const std::exception& e) {
+                        std::cerr << "[-] gen DC " << dc << " Exception: " << e.what() << "\n";
+                        c.send_text(m.chat, std::string("❌ Error: ") + e.what());
+                        candidate->disconnect();
+                        sent_ok = true;
+                    }
                 }
 
-                const auto addr = kDcAddresses.at(gen_dc);
-                cppgram::ClientOptions opts;
-                opts.api_id = a_id;
-                opts.api_hash = a_hash;
-                opts.dc_id = gen_dc;
-                opts.dc_ip = addr;
-                opts.dc_port = 443;
-                opts.session_path = "/tmp/gen_temp.sqlite"; // Heroku writable path
-
-                gen_client = std::make_unique<cppgram::Client>(opts);
-                try {
-                    gen_client->connect();
-                    fn::auth_sendCode send;
-                    send.phone_number = gen_phone;
-                    send.api_id = a_id;
-                    send.api_hash = a_hash;
-                    send.settings = std::make_shared<tl::CodeSettings>(tl::CodeSettings{ty::codeSettings{}});
-                    
-                    const tl::auth_SentCode sent = gen_client->invoke(send);
-                    if (const auto* s = std::get_if<ty::auth_sentCode>(&sent.value)) {
-                        gen_code_hash = s->phone_code_hash;
-                        c.send_text(m.chat, "✅ Code sent to Telegram app/SMS. Reply with /otp <code>");
-                    } else {
-                        c.send_text(m.chat, "❌ Unexpected response from Telegram.");
-                    }
-                } catch (const std::exception& e) {
-                    c.send_text(m.chat, std::string("❌ Error: ") + e.what());
-                    if (gen_client) { gen_client->disconnect(); gen_client.reset(); }
+                if (!sent_ok) {
+                    c.send_text(m.chat, "❌ Could not reach Telegram on any DC.");
                 }
             });
 
@@ -265,12 +302,12 @@ int main() {
                     sign.phone_number = gen_phone;
                     sign.phone_code_hash = gen_code_hash;
                     sign.phone_code = code;
-                    
+
                     gen_client->invoke(sign);
-                    
+
                     std::string session = gen_client->export_session_string();
                     c.send_text(m.chat, "✅ Success! Your Session String:\n\n<code>" + html_escape(session) + "</code>", cppgram::ParseMode::Html);
-                    
+
                     gen_client->disconnect();
                     gen_client.reset();
                     gen_code_hash = "";
@@ -306,7 +343,7 @@ int main() {
                     gen_client->check_password(pw);
                     std::string session = gen_client->export_session_string();
                     c.send_text(m.chat, "✅ 2FA Passed! Your Session String:\n\n<code>" + html_escape(session) + "</code>", cppgram::ParseMode::Html);
-                    
+
                     gen_client->disconnect();
                     gen_client.reset();
                     gen_code_hash = "";
